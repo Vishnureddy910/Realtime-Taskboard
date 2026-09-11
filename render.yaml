@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: taskboard-web
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+
+  - type: worker
+    name: taskboard-worker
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    dockerCommand: celery -A app.core.celery_app worker --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false

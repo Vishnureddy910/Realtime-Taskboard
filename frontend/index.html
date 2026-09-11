@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time TaskBoard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans h-screen flex flex-col">
+    
+    <!-- Navbar -->
+    <nav class="bg-blue-600 text-white p-4 shadow-md flex justify-between">
+        <h1 class="text-xl font-bold">Collaborative TaskBoard</h1>
+        <div id="user-info" class="hidden">
+            <span id="username-display" class="mr-4"></span>
+            <button onclick="logout()" class="bg-blue-800 px-3 py-1 rounded text-sm hover:bg-blue-900">Logout</button>
+        </div>
+    </nav>
+
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="flex-grow flex items-center justify-center">
+        <div class="bg-white p-8 rounded-lg shadow-md w-96 relative">
+            <h2 id="auth-title" class="text-2xl font-bold mb-6 text-center">Login</h2>
+            
+            <!-- Email field (only visible during signup) -->
+            <input type="email" id="email" placeholder="Email" class="w-full mb-4 p-2 border rounded hidden">
+            
+            <input type="text" id="username" placeholder="Username" class="w-full mb-4 p-2 border rounded">
+            
+            <!-- Password field with Eye Icon -->
+            <div class="relative w-full mb-6">
+                <input type="password" id="password" placeholder="Password" class="w-full p-2 border rounded pr-10">
+                <button onclick="togglePassword()" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </button>
+            </div>
+            
+            <button id="auth-btn" onclick="login()" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 font-bold">Sign In</button>
+            <p id="auth-error" class="text-red-500 text-sm mt-3 hidden"></p>
+            
+            <!-- Toggle between Login and Signup -->
+            <div class="mt-4 text-center text-sm">
+                <button onclick="toggleAuthMode()" id="toggle-auth-btn" class="text-blue-600 hover:underline">Need an account? Sign up</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Board Screen (Hidden by default) -->
+    <div id="board-screen" class="hidden flex-grow p-6 overflow-hidden">
+        <div class="flex space-x-6 h-full max-w-6xl mx-auto">
+            
+            <!-- To Do List -->
+            <div class="bg-gray-200 w-1/3 rounded-lg flex flex-col max-h-full">
+                <h3 class="font-bold p-3 bg-gray-300 rounded-t-lg">To Do</h3>
+                <div id="list-todo" class="p-3 flex-grow overflow-y-auto space-y-3" ondragover="allowDrop(event)" ondrop="drop(event, 1)"></div>
+            </div>
+
+            <!-- In Progress List -->
+            <div class="bg-gray-200 w-1/3 rounded-lg flex flex-col max-h-full">
+                <h3 class="font-bold p-3 bg-blue-200 rounded-t-lg">In Progress</h3>
+                <div id="list-inprogress" class="p-3 flex-grow overflow-y-auto space-y-3" ondragover="allowDrop(event)" ondrop="drop(event, 2)"></div>
+            </div>
+
+            <!-- Done List -->
+            <div class="bg-gray-200 w-1/3 rounded-lg flex flex-col max-h-full">
+                <h3 class="font-bold p-3 bg-green-200 rounded-t-lg">Done</h3>
+                <div id="list-done" class="p-3 flex-grow overflow-y-auto space-y-3" ondragover="allowDrop(event)" ondrop="drop(event, 3)"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Link to our JavaScript logic -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

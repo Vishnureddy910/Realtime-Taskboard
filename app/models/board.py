@@ -1,0 +1,9 @@
+from sqlalchemy import Column, String, Integer
+from app.db.base import Base
+
+class Board(Base):
+    __tablename__ = "boards"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String)
