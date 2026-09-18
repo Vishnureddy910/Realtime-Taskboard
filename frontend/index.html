@@ -65,6 +65,10 @@
             <button id="members-btn" onclick="openMembersModal()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 font-bold shadow-sm whitespace-nowrap">
                 Members
             </button>
+            <!-- Owner only -->
+            <button id="invite-btn" onclick="openMembersModal({ focusInvite: true })" hidden class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 font-bold shadow-sm whitespace-nowrap">
+                + Invite
+            </button>
             <button onclick="createBoard()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 font-bold shadow-sm whitespace-nowrap">
                 + New Board
             </button>

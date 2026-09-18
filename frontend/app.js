@@ -339,7 +339,11 @@ function applyBoardAccess(board) {
     badge.textContent = currentRole ? `You: ${currentRole}` : "";
     badge.hidden = !currentRole;
 
-    document.getElementById("members-btn").textContent = board ? `Members (${board.member_count})` : "Members";
+    // The owner's controls are visible up front, instead of only inside the members dialog
+    const isOwner = currentRole === "owner";
+    const label = isOwner ? "Manage members" : "Members";
+    document.getElementById("members-btn").textContent = board ? `${label} (${board.member_count})` : "Members";
+    document.getElementById("invite-btn").hidden = !isOwner;
     // Viewers get a read-only board (see the .read-only rule in index.html)
     document.getElementById("board-screen").classList.toggle("read-only", currentRole === "viewer");
 }
@@ -378,7 +382,7 @@ function isMembersModalOpen() {
     return !document.getElementById("members-modal").classList.contains("hidden");
 }
 
-function openMembersModal() {
+function openMembersModal({ focusInvite = false } = {}) {
     if (!currentBoardId) return;
     const isOwner = currentRole === "owner";
     const wasOpen = isMembersModalOpen();
@@ -393,8 +397,8 @@ function openMembersModal() {
     if (isOwner && !wasOpen) {
         resetInviteSearch();
         document.getElementById("invite-role").value = "editor";
-        document.getElementById("invite-search").focus();
     }
+    if (isOwner && focusInvite) document.getElementById("invite-search").focus();
     loadMembers();
 }
 
