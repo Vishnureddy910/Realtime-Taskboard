@@ -1,7 +1,7 @@
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from app.routers.websocket import CLOSE_NOT_A_MEMBER, CLOSE_UNAUTHENTICATED
+from app.websockets.connection_manager import CLOSE_NOT_A_MEMBER, CLOSE_UNAUTHENTICATED
 
 from tests.helpers import add_member, create_board, create_task, register
 

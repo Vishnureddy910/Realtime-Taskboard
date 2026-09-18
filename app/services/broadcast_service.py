@@ -5,7 +5,7 @@ import logging
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from app.core.config import settings
-from app.websockets.connection_manager import manager
+from app.websockets.connection_manager import CLOSE_NOT_A_MEMBER, manager
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,20 @@ async def publish_event(board_id: int, event_data: dict):
     channel = f"board:{board_id}"
     message = json.dumps(event_data)
     await redis_client.publish(channel, message)
+
+async def _deliver(board_id: int, raw_message: str):
+    """Forwards a board event to all WebSockets connected to this specific instance."""
+    try:
+        event = json.loads(raw_message)
+    except ValueError:
+        event = {}
+
+    if event.get("event") == "member_removed":
+        # Every instance receives this, so a removed user's sockets are closed wherever they
+        # are connected, before this or any later event can reach them
+        await manager.disconnect_user(board_id, event["user_id"], code=CLOSE_NOT_A_MEMBER)
+
+    await manager.broadcast(raw_message, board_id)
 
 async def subscribe_to_channel(board_id: int):
     """
@@ -49,8 +63,7 @@ async def subscribe_to_channel(board_id: int):
 
             async for message in pubsub.listen():
                 if message["type"] == "message":
-                    # Forward the Redis message to all WebSockets connected to this specific instance
-                    await manager.broadcast(message["data"], board_id)
+                    await _deliver(board_id, message["data"])
         except (RedisError, OSError) as exc:
             logger.warning("Lost subscription to %s (%s); retrying in %.1fs", channel, exc, delay)
         finally:

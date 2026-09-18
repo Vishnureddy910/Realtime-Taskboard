@@ -2,6 +2,8 @@ let listMap = {};
 let currentToken = null;
 let ws = null;
 let currentBoardId = null; 
+let currentBoards = [];   // boards you belong to, each with your role and its member count
+let currentRole = null;   // your role on the current board: owner, editor or viewer
 let isLoginMode = true;
 let draggedElement = null;
 
@@ -160,11 +162,16 @@ async function loadBoards() {
         if (!response.ok) throw new Error("Could not fetch boards");
 
         const boards = await response.json();
+        currentBoards = boards;
         const selectEl = document.getElementById("board-select");
         selectEl.innerHTML = ""; 
 
         if (boards.length === 0) {
             selectEl.innerHTML = `<option disabled>No boards found. Create one!</option>`;
+            currentBoardId = null;
+            disconnectWebSocket();
+            applyBoardAccess(null);
+            document.getElementById("board-columns").replaceChildren();
             return;
         }
 
@@ -185,6 +192,7 @@ async function loadBoards() {
 async function switchBoard(boardId) {
     currentBoardId = boardId;
     disconnectWebSocket();
+    applyBoardAccess(currentBoards.find(board => String(board.id) === String(boardId)));
 
     await loadLists(boardId);
     connectWebSocket();
@@ -239,7 +247,7 @@ function buildColumn(list, index) {
     colDiv.ondrop = (e) => drop(e, list.id);
 
     const headerContainer = el("div", `flex justify-between items-center p-3 ${HEADER_COLORS[index % HEADER_COLORS.length]}`);
-    const deleteListBtn = el("button");
+    const deleteListBtn = el("button", "editor-only");
     deleteListBtn.innerHTML = CLOSE_ICON;
     deleteListBtn.title = "Delete Column";
     deleteListBtn.onclick = () => promptDeleteList(list.id);
@@ -248,7 +256,7 @@ function buildColumn(list, index) {
     const taskContainer = el("div", "p-3 flex-1 flex flex-col gap-3 overflow-y-auto");
     taskContainer.id = `list-${list.id}`;
 
-    const addTaskBtn = el("button", "w-full text-left text-sm text-gray-500 hover:text-gray-800 p-2 mt-2 font-semibold bg-gray-50 border-t border-gray-200", "+ Add Task");
+    const addTaskBtn = el("button", "editor-only w-full text-left text-sm text-gray-500 hover:text-gray-800 p-2 mt-2 font-semibold bg-gray-50 border-t border-gray-200", "+ Add Task");
     addTaskBtn.onclick = () => openTaskModal("create", list.id);
 
     colDiv.append(headerContainer, taskContainer, addTaskBtn);
@@ -256,14 +264,14 @@ function buildColumn(list, index) {
 }
 
 function buildAddColumnButton() {
-    const addColBtn = el("button", "min-w-[280px] bg-white border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center min-h-[60vh] text-gray-500 hover:bg-gray-50 hover:text-gray-700 font-bold transition-colors", "+ Add New Column");
+    const addColBtn = el("button", "editor-only min-w-[280px] bg-white border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center min-h-[60vh] text-gray-500 hover:bg-gray-50 hover:text-gray-700 font-bold transition-colors", "+ Add New Column");
     addColBtn.onclick = openListModal;
     return addColBtn;
 }
 
 function buildTaskCard(task) {
     const card = el("div", "bg-white p-3 rounded shadow-sm border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors");
-    card.draggable = true;
+    card.draggable = canEdit();
     card.dataset.task = JSON.stringify(task);
     card.ondragstart = drag;
 
@@ -283,7 +291,7 @@ function buildTaskCard(task) {
     deleteBtn.innerHTML = DELETE_ICON;
     deleteBtn.onclick = () => promptDeleteTask(task.id);
 
-    const actions = el("div", "flex gap-2");
+    const actions = el("div", "editor-only flex gap-2");
     actions.append(editBtn, deleteBtn);
 
     const footer = el("div", "flex justify-between items-center mt-3 pt-2 border-t border-gray-100");
@@ -319,7 +327,45 @@ async function createBoard() {
     }
 }
 
-// --- INVITE MEMBERS (username autocomplete) ---
+// --- BOARD ACCESS (your role on the current board) ---
+function canEdit() {
+    return currentRole === "owner" || currentRole === "editor";
+}
+
+function applyBoardAccess(board) {
+    currentRole = board ? board.role : null;
+
+    const badge = document.getElementById("role-badge");
+    badge.textContent = currentRole ? `You: ${currentRole}` : "";
+    badge.hidden = !currentRole;
+
+    document.getElementById("members-btn").textContent = board ? `Members (${board.member_count})` : "Members";
+    // Viewers get a read-only board (see the .read-only rule in index.html)
+    document.getElementById("board-screen").classList.toggle("read-only", currentRole === "viewer");
+}
+
+// Called when a member_* event arrives: refetch your role and the member count without leaving the board
+async function refreshBoardAccess() {
+    try {
+        const response = await fetch("/boards/", { headers: { "Authorization": `Bearer ${currentToken}` } });
+        await ensureOk(response);
+        currentBoards = await response.json();
+    } catch (error) {
+        console.error("Error refreshing board access:", error);
+        return;
+    }
+
+    // If you were removed, the server also closes your socket (4403), which reloads the board list
+    const board = currentBoards.find(b => String(b.id) === String(currentBoardId));
+    if (!board) return;
+
+    const roleChanged = board.role !== currentRole;
+    applyBoardAccess(board);
+    if (roleChanged) reloadBoardUI(); // re-render so drag and edit controls match the new role
+    if (isMembersModalOpen()) openMembersModal();
+}
+
+// --- MEMBERS (list, roles, remove, leave, invite with username autocomplete) ---
 const SEARCH_MIN_CHARS = 1;
 const SEARCH_DEBOUNCE_MS = 250;
 let inviteSearchTimer = null;
@@ -328,19 +374,129 @@ let inviteSuggestions = [];
 let inviteActiveIndex = -1;
 let selectedInvitee = null;
 
-function openInviteModal() {
+function isMembersModalOpen() {
+    return !document.getElementById("members-modal").classList.contains("hidden");
+}
+
+function openMembersModal() {
     if (!currentBoardId) return;
-    resetInviteSearch();
-    document.getElementById("invite-role").value = "editor";
-    document.getElementById("invite-modal").classList.remove("hidden");
-    document.getElementById("invite-search").focus();
+    const isOwner = currentRole === "owner";
+    const wasOpen = isMembersModalOpen();
+
+    // Only the owner can invite; everyone except the owner can leave.
+    // The hidden attribute (not Tailwind's class) so visibility never waits on runtime-generated CSS.
+    document.getElementById("invite-section").hidden = !isOwner;
+    document.getElementById("leave-board-btn").hidden = isOwner;
+    document.getElementById("members-error").textContent = "";
+    document.getElementById("members-modal").classList.remove("hidden");
+
+    if (isOwner && !wasOpen) {
+        resetInviteSearch();
+        document.getElementById("invite-role").value = "editor";
+        document.getElementById("invite-search").focus();
+    }
     loadMembers();
 }
 
-function closeInviteModal() {
+function closeMembersModal() {
     clearTimeout(inviteSearchTimer);
     if (inviteSearchController) inviteSearchController.abort();
-    document.getElementById("invite-modal").classList.add("hidden");
+    document.getElementById("members-modal").classList.add("hidden");
+}
+
+function roleBadge(role) {
+    return el("span", "text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-semibold uppercase", role);
+}
+
+function memberControls(member) {
+    // The owner manages everyone else; everyone else just sees roles
+    if (currentRole !== "owner" || member.role === "owner") return roleBadge(member.role);
+
+    const roleSelect = el("select", "text-xs border rounded p-1");
+    roleSelect.setAttribute("aria-label", `Role for ${member.username}`);
+    ["editor", "viewer"].forEach(role => {
+        const option = el("option", "", role);
+        option.value = role;
+        roleSelect.append(option);
+    });
+    roleSelect.value = member.role;
+    roleSelect.onchange = () => changeMemberRole(member, roleSelect.value);
+
+    const removeBtn = el("button", "text-xs text-red-600 hover:underline", "Remove");
+    removeBtn.onclick = () => removeMember(member);
+
+    const controls = el("div", "flex items-center gap-3");
+    controls.append(roleSelect, removeBtn);
+    return controls;
+}
+
+async function loadMembers() {
+    const list = document.getElementById("members-list");
+    const me = sessionStorage.getItem("username");
+    try {
+        const response = await fetch(`/boards/${currentBoardId}/members`, {
+            headers: { "Authorization": `Bearer ${currentToken}` }
+        });
+        await ensureOk(response);
+        const members = await response.json();
+
+        document.getElementById("members-count").textContent = `${members.length} member${members.length === 1 ? "" : "s"}`;
+        list.replaceChildren(...members.map(member => {
+            const row = el("li", "flex justify-between items-center gap-3 py-2");
+            const name = member.username === me ? `${member.username} (you)` : member.username;
+            row.append(el("span", "text-gray-800 truncate", name), memberControls(member));
+            return row;
+        }));
+    } catch (error) {
+        list.replaceChildren(el("li", "text-red-600 py-2", error.message));
+    }
+}
+
+async function updateMembership(userId, method, body) {
+    const response = await fetch(`/boards/${currentBoardId}/members/${userId}`, {
+        method: method,
+        headers: { "Authorization": `Bearer ${currentToken}`, "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined
+    });
+    await ensureOk(response);
+}
+
+async function changeMemberRole(member, role) {
+    try {
+        await updateMembership(member.user_id, "PATCH", { role: role });
+    } catch (error) {
+        document.getElementById("members-error").textContent = error.message;
+    }
+    loadMembers();
+}
+
+async function removeMember(member) {
+    if (!confirm(`Remove ${member.username} from this board? They lose access immediately.`)) return;
+    try {
+        await updateMembership(member.user_id, "DELETE");
+    } catch (error) {
+        document.getElementById("members-error").textContent = error.message;
+    }
+    loadMembers();
+}
+
+async function leaveBoard() {
+    if (!confirm("Leave this board? You'll need to be invited again to come back.")) return;
+    const me = sessionStorage.getItem("username");
+    try {
+        const response = await fetch(`/boards/${currentBoardId}/members`, {
+            headers: { "Authorization": `Bearer ${currentToken}` }
+        });
+        await ensureOk(response);
+        const myMembership = (await response.json()).find(member => member.username === me);
+        // Stop reconnecting before the server revokes this socket
+        disconnectWebSocket();
+        await updateMembership(myMembership.user_id, "DELETE");
+        closeMembersModal();
+        loadBoards();
+    } catch (error) {
+        document.getElementById("members-error").textContent = error.message;
+    }
 }
 
 function resetInviteSearch() {
@@ -460,7 +616,7 @@ function onInviteKeydown(event) {
         }
     } else if (event.key === "Escape") {
         if (listOpen) hideSuggestions();
-        else closeInviteModal();
+        else closeMembersModal();
     }
 }
 
@@ -491,27 +647,6 @@ async function submitInvite() {
         loadMembers();
     } catch (error) {
         setInviteHint(error.message, "error");
-    }
-}
-
-async function loadMembers() {
-    const list = document.getElementById("invite-members");
-    try {
-        const response = await fetch(`/boards/${currentBoardId}/members`, {
-            headers: { "Authorization": `Bearer ${currentToken}` }
-        });
-        await ensureOk(response);
-        const members = await response.json();
-        list.replaceChildren(...members.map(member => {
-            const item = el("li", "flex justify-between items-center");
-            item.append(
-                el("span", "text-gray-800", member.username),
-                el("span", "text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-semibold uppercase", member.role),
-            );
-            return item;
-        }));
-    } catch (error) {
-        list.replaceChildren(el("li", "text-red-600", error.message));
     }
 }
 
@@ -673,6 +808,11 @@ function connectWebSocket() {
         const data = JSON.parse(event.data);
         flashBoard();
 
+        if (data.event.startsWith("member_")) {
+            // Someone joined, left, or changed role (possibly you): refresh role and member count
+            refreshBoardAccess();
+            return;
+        }
         if (data.event === "resync" || data.event === "list_created" || data.event === "list_deleted") {
             // Structure may have changed (or events were missed): rebuild everything off-screen
             await reloadBoardUI();
@@ -691,6 +831,8 @@ function connectWebSocket() {
             logout();
             alert("Your session has expired. Please log in again.");
         } else if (event.code === WS_CLOSE_NOT_A_MEMBER) {
+            closeMembersModal();
+            alert("You no longer have access to this board.");
             loadBoards();
         } else {
             scheduleReconnect();
@@ -790,6 +932,7 @@ function drag(event) {
 
 async function drop(event, newListId) {
     event.preventDefault();
+    if (!canEdit()) return;
     event.currentTarget.classList.remove("ring-4", "ring-blue-400", "bg-blue-50");
 
     const taskData = JSON.parse(event.dataTransfer.getData("text/plain"));

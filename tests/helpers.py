@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 
 
@@ -37,3 +38,13 @@ def create_task(client, user: AuthUser, list_id: int, title: str = "Task") -> di
     response = client.post("/tasks/", json={"title": title, "list_id": list_id}, headers=user.headers)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def wait_for_subscriber(redis_sync, channel: str, timeout: float = 5.0):
+    """Blocks until a server instance is subscribed to the channel (the listener starts asynchronously)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if dict(redis_sync.pubsub_numsub(channel)).get(channel, 0) > 0:
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"No subscriber on {channel}")

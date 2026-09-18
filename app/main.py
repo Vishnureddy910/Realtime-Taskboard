@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.routers import auth, boards, lists, tasks, users, websocket
+from app.routers import auth, boards, health, lists, tasks, users, websocket
 from app.services.broadcast_service import redis_client
 
 @asynccontextmanager
@@ -20,6 +20,7 @@ app.include_router(lists.router, prefix="/lists", tags=["lists"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(websocket.router, tags=["websockets"])
+app.include_router(health.router, tags=["health"])
 
 # ==========================================
 # FRONTEND

@@ -1,18 +1,7 @@
 import asyncio
-import time
 
-from app.websockets.connection_manager import ConnectionManager
-from tests.helpers import create_board, create_task, register
-
-
-def _wait_for_subscriber(redis_sync, channel: str, timeout: float = 5.0):
-    # The Redis listener starts asynchronously after the socket connects
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if dict(redis_sync.pubsub_numsub(channel)).get(channel, 0) > 0:
-            return
-        time.sleep(0.05)
-    raise AssertionError(f"No subscriber on {channel}")
+from app.websockets.connection_manager import Connection, ConnectionManager
+from tests.helpers import create_board, create_task, register, wait_for_subscriber
 
 
 def test_mutation_is_pushed_to_connected_member(client, redis_sync):
@@ -20,7 +9,7 @@ def test_mutation_is_pushed_to_connected_member(client, redis_sync):
     board = create_board(client, alice)
 
     with client.websocket_connect(f"/ws/boards/{board['id']}?token={alice.token}") as ws:
-        _wait_for_subscriber(redis_sync, f"board:{board['id']}")
+        wait_for_subscriber(redis_sync, f"board:{board['id']}")
 
         task = create_task(client, alice, board["lists"][0]["id"], title="Live")
 
@@ -35,7 +24,7 @@ def test_event_published_by_another_instance_is_delivered(client, redis_sync):
     channel = f"board:{board['id']}"
 
     with client.websocket_connect(f"/ws/boards/{board['id']}?token={alice.token}") as ws:
-        _wait_for_subscriber(redis_sync, channel)
+        wait_for_subscriber(redis_sync, channel)
 
         redis_sync.publish(channel, '{"event": "task_deleted", "task_id": 42}')
 
@@ -53,12 +42,12 @@ def test_listener_recovers_after_redis_connection_drop(client, redis_sync):
     channel = f"board:{board['id']}"
 
     with client.websocket_connect(f"/ws/boards/{board['id']}?token={alice.token}") as ws:
-        _wait_for_subscriber(redis_sync, channel)
+        wait_for_subscriber(redis_sync, channel)
 
         redis_sync.client_kill_filter(_type="pubsub")
 
         assert ws.receive_json() == {"event": "resync"}
-        _wait_for_subscriber(redis_sync, channel)
+        wait_for_subscriber(redis_sync, channel)
         redis_sync.publish(channel, '{"event": "task_deleted", "task_id": 7}')
         assert ws.receive_json() == {"event": "task_deleted", "task_id": 7}
 
@@ -76,11 +65,11 @@ class _FakeSocket:
 
 def test_dead_socket_does_not_block_delivery_to_others():
     manager = ConnectionManager()
-    healthy, dead, also_healthy = _FakeSocket(), _FakeSocket(fail=True), _FakeSocket()
+    healthy, dead, also_healthy = (Connection(socket, user_id=1) for socket in (_FakeSocket(), _FakeSocket(fail=True), _FakeSocket()))
     manager.active_connections[1] = [healthy, dead, also_healthy]
 
     asyncio.run(manager.broadcast("hello", 1))
 
-    assert healthy.received == ["hello"]
-    assert also_healthy.received == ["hello"]
+    assert healthy.websocket.received == ["hello"]
+    assert also_healthy.websocket.received == ["hello"]
     assert manager.active_connections[1] == [healthy, also_healthy]

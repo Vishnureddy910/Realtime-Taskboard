@@ -10,9 +10,17 @@ class BoardOut(BoardCreate):
 
     id: int
 
+class BoardSummaryOut(BoardOut):
+    """A board as seen by one member: includes that member's role."""
+    role: str
+    member_count: int
+
 class BoardMemberCreate(BaseModel):
     username: str
     role: Literal["editor", "viewer"] = "editor"
+
+class BoardMemberUpdate(BaseModel):
+    role: Literal["editor", "viewer"]
 
 class BoardMemberOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
