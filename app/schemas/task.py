@@ -1,11 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
-# NEW: A small schema just to safely send the username
+# A small schema just to safely send the username
 class TaskUserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     username: str
-    class Config:
-        from_attributes = True
 
 class TaskBase(BaseModel):
     title: str
@@ -22,12 +22,9 @@ class TaskUpdate(BaseModel):
     expected_version: int 
 
 class TaskOut(TaskBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     version: int
-    
-    # --- NEW CODE: Include the creator data in the output ---
     creator_id: Optional[int] = None
     creator: Optional[TaskUserOut] = None
-
-    class Config:
-        from_attributes = True
