@@ -322,20 +322,188 @@ async function createBoard() {
     }
 }
 
-async function inviteMember() {
+// --- INVITE MEMBERS (username autocomplete) ---
+const SEARCH_MIN_CHARS = 2;
+const SEARCH_DEBOUNCE_MS = 250;
+let inviteSearchTimer = null;
+let inviteSearchController = null;
+let inviteSuggestions = [];
+let inviteActiveIndex = -1;
+let selectedInvitee = null;
+
+function openInviteModal() {
     if (!currentBoardId) return;
-    const username = prompt("Username to add to this board (as editor):");
-    if (!username) return;
+    resetInviteSearch();
+    document.getElementById("invite-role").value = "editor";
+    document.getElementById("invite-modal").classList.remove("hidden");
+    document.getElementById("invite-search").focus();
+    loadMembers();
+}
+
+function closeInviteModal() {
+    clearTimeout(inviteSearchTimer);
+    if (inviteSearchController) inviteSearchController.abort();
+    document.getElementById("invite-modal").classList.add("hidden");
+}
+
+function resetInviteSearch() {
+    document.getElementById("invite-search").value = "";
+    selectInvitee(null);
+    renderSuggestions([]);
+    setInviteHint(`Type at least ${SEARCH_MIN_CHARS} characters of a username.`);
+}
+
+function setInviteHint(message, tone = "muted") {
+    const hint = document.getElementById("invite-hint");
+    hint.textContent = message;
+    hint.className = `text-xs mt-1 mb-4 min-h-[1rem] ${{ muted: "text-gray-500", error: "text-red-600", success: "text-green-600" }[tone]}`;
+}
+
+function onInviteInput() {
+    selectInvitee(null);
+    clearTimeout(inviteSearchTimer);
+
+    const query = document.getElementById("invite-search").value.trim();
+    if (query.length < SEARCH_MIN_CHARS) {
+        if (inviteSearchController) inviteSearchController.abort();
+        renderSuggestions([]);
+        setInviteHint(`Type at least ${SEARCH_MIN_CHARS} characters of a username.`);
+        return;
+    }
+    // Debounce: only search once the user pauses typing, instead of on every keystroke
+    inviteSearchTimer = setTimeout(() => searchUsers(query), SEARCH_DEBOUNCE_MS);
+}
+
+async function searchUsers(query) {
+    // Cancel the previous request so a slow, older response can't overwrite newer results
+    if (inviteSearchController) inviteSearchController.abort();
+    inviteSearchController = new AbortController();
+
+    try {
+        const params = new URLSearchParams({ q: query, board_id: currentBoardId });
+        const response = await fetch(`/users/search?${params}`, {
+            headers: { "Authorization": `Bearer ${currentToken}` },
+            signal: inviteSearchController.signal
+        });
+        await ensureOk(response);
+        const users = await response.json();
+        renderSuggestions(users);
+        setInviteHint(users.length ? "" : `No users found starting with "${query}".`);
+    } catch (error) {
+        if (error.name === "AbortError") return;
+        renderSuggestions([]);
+        setInviteHint(error.message, "error");
+    }
+}
+
+function renderSuggestions(users) {
+    inviteSuggestions = users;
+    inviteActiveIndex = users.length ? 0 : -1;
+
+    const list = document.getElementById("invite-suggestions");
+    list.replaceChildren(...users.map((user, index) => {
+        const item = el("li", "px-3 py-2 cursor-pointer text-sm", user.username);
+        item.setAttribute("role", "option");
+        // mousedown (not click) fires before the input's blur hides the list
+        item.onmousedown = (event) => {
+            event.preventDefault();
+            selectInvitee(user);
+        };
+        item.onmouseenter = () => {
+            inviteActiveIndex = index;
+            highlightSuggestion();
+        };
+        return item;
+    }));
+
+    list.classList.toggle("hidden", users.length === 0);
+    document.getElementById("invite-search").setAttribute("aria-expanded", users.length > 0);
+    highlightSuggestion();
+}
+
+function highlightSuggestion() {
+    [...document.getElementById("invite-suggestions").children].forEach((item, index) => {
+        const active = index === inviteActiveIndex;
+        item.classList.toggle("bg-blue-100", active);
+        item.setAttribute("aria-selected", active);
+        if (active) item.scrollIntoView({ block: "nearest" });
+    });
+}
+
+function hideSuggestions() {
+    document.getElementById("invite-suggestions").classList.add("hidden");
+    document.getElementById("invite-search").setAttribute("aria-expanded", false);
+}
+
+function onInviteKeydown(event) {
+    const listOpen = !document.getElementById("invite-suggestions").classList.contains("hidden");
+
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && listOpen) {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        inviteActiveIndex = (inviteActiveIndex + step + inviteSuggestions.length) % inviteSuggestions.length;
+        highlightSuggestion();
+    } else if (event.key === "Enter") {
+        event.preventDefault();
+        if (listOpen && inviteActiveIndex >= 0) {
+            selectInvitee(inviteSuggestions[inviteActiveIndex]);
+        } else if (selectedInvitee) {
+            submitInvite();
+        }
+    } else if (event.key === "Escape") {
+        if (listOpen) hideSuggestions();
+        else closeInviteModal();
+    }
+}
+
+function selectInvitee(user) {
+    selectedInvitee = user;
+    document.getElementById("invite-submit").disabled = !user;
+    if (user) {
+        document.getElementById("invite-search").value = user.username;
+        hideSuggestions();
+        setInviteHint(`Press Enter or click Invite to add ${user.username}.`);
+    }
+}
+
+async function submitInvite() {
+    if (!selectedInvitee) return;
+    const invitee = selectedInvitee;
+    const role = document.getElementById("invite-role").value;
+
     try {
         const response = await fetch(`/boards/${currentBoardId}/members`, {
             method: "POST",
             headers: { "Authorization": `Bearer ${currentToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ username: username.trim(), role: "editor" })
+            body: JSON.stringify({ username: invitee.username, role: role })
         });
         await ensureOk(response);
-        alert(`${username} can now collaborate on this board.`);
+        resetInviteSearch();
+        setInviteHint(`${invitee.username} added as ${role}.`, "success");
+        loadMembers();
     } catch (error) {
-        alert(error.message);
+        setInviteHint(error.message, "error");
+    }
+}
+
+async function loadMembers() {
+    const list = document.getElementById("invite-members");
+    try {
+        const response = await fetch(`/boards/${currentBoardId}/members`, {
+            headers: { "Authorization": `Bearer ${currentToken}` }
+        });
+        await ensureOk(response);
+        const members = await response.json();
+        list.replaceChildren(...members.map(member => {
+            const item = el("li", "flex justify-between items-center");
+            item.append(
+                el("span", "text-gray-800", member.username),
+                el("span", "text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-semibold uppercase", member.role),
+            );
+            return item;
+        }));
+    } catch (error) {
+        list.replaceChildren(el("li", "text-red-600", error.message));
     }
 }
 

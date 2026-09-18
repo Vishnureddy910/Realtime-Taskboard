@@ -12,6 +12,13 @@ class UserOut(BaseModel):
     username: str
     email: str
 
+class UserSearchOut(BaseModel):
+    """Public view of a user: never exposes email to other users."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str

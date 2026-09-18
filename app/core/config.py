@@ -20,6 +20,10 @@ class Settings:
     TASK_RATE_LIMIT: int = int(os.getenv("TASK_RATE_LIMIT", "5"))
     TASK_RATE_WINDOW_SECONDS: int = int(os.getenv("TASK_RATE_WINDOW_SECONDS", "60"))
 
+    # Rate limiting for user search (per user), which slows down username enumeration
+    USER_SEARCH_RATE_LIMIT: int = int(os.getenv("USER_SEARCH_RATE_LIMIT", "30"))
+    USER_SEARCH_RATE_WINDOW_SECONDS: int = int(os.getenv("USER_SEARCH_RATE_WINDOW_SECONDS", "60"))
+
     def __init__(self):
         # Never silently fall back to a known signing key in production
         if not self.SECRET_KEY:
