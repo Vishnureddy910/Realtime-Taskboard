@@ -136,7 +136,7 @@ function logout() {
     currentBoardId = null;
     sessionStorage.removeItem("token");
     sessionStorage.removeItem("username");
-    if (ws) ws.close();
+    disconnectWebSocket();
 
     document.getElementById("auth-screen").classList.remove("hidden");
     document.getElementById("board-screen").classList.add("hidden");
@@ -184,10 +184,7 @@ async function loadBoards() {
 
 async function switchBoard(boardId) {
     currentBoardId = boardId;
-
-    if (ws) {
-        ws.close();
-    }
+    disconnectWebSocket();
 
     await loadLists(boardId);
     connectWebSocket();
@@ -323,7 +320,7 @@ async function createBoard() {
 }
 
 // --- INVITE MEMBERS (username autocomplete) ---
-const SEARCH_MIN_CHARS = 2;
+const SEARCH_MIN_CHARS = 1;
 const SEARCH_DEBOUNCE_MS = 250;
 let inviteSearchTimer = null;
 let inviteSearchController = null;
@@ -350,7 +347,7 @@ function resetInviteSearch() {
     document.getElementById("invite-search").value = "";
     selectInvitee(null);
     renderSuggestions([]);
-    setInviteHint(`Type at least ${SEARCH_MIN_CHARS} characters of a username.`);
+    setInviteHint("Start typing a username.");
 }
 
 function setInviteHint(message, tone = "muted") {
@@ -367,7 +364,7 @@ function onInviteInput() {
     if (query.length < SEARCH_MIN_CHARS) {
         if (inviteSearchController) inviteSearchController.abort();
         renderSuggestions([]);
-        setInviteHint(`Type at least ${SEARCH_MIN_CHARS} characters of a username.`);
+        setInviteHint("Start typing a username.");
         return;
     }
     // Debounce: only search once the user pauses typing, instead of on every keystroke
@@ -402,7 +399,11 @@ function renderSuggestions(users) {
 
     const list = document.getElementById("invite-suggestions");
     list.replaceChildren(...users.map((user, index) => {
-        const item = el("li", "px-3 py-2 cursor-pointer text-sm", user.username);
+        const item = el("li", "px-3 py-2 cursor-pointer");
+        item.append(el("div", "text-sm text-gray-800", user.username));
+        if (user.shared_boards.length) {
+            item.append(el("div", "text-xs text-gray-500", sharedBoardsNote(user.shared_boards)));
+        }
         item.setAttribute("role", "option");
         // mousedown (not click) fires before the input's blur hides the list
         item.onmousedown = (event) => {
@@ -419,6 +420,13 @@ function renderSuggestions(users) {
     list.classList.toggle("hidden", users.length === 0);
     document.getElementById("invite-search").setAttribute("aria-expanded", users.length > 0);
     highlightSuggestion();
+}
+
+// e.g. "On 3 of your boards: Batman, Sprint +1 more"
+function sharedBoardsNote(boards) {
+    const shown = boards.slice(0, 2).join(", ");
+    const more = boards.length > 2 ? ` +${boards.length - 2} more` : "";
+    return `On ${boards.length} of your board${boards.length === 1 ? "" : "s"}: ${shown}${more}`;
 }
 
 function highlightSuggestion() {
@@ -638,26 +646,73 @@ async function saveList() {
 }
 
 // --- WEBSOCKETS ---
+// Application close codes sent by the server when it refuses a connection
+const WS_CLOSE_UNAUTHENTICATED = 4401;
+const WS_CLOSE_NOT_A_MEMBER = 4403;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30000;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+
 function connectWebSocket() {
-    if (!currentBoardId) return;
+    clearTimeout(reconnectTimer);
+    if (!currentBoardId || !currentToken) return;
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     // Browsers can't send an Authorization header on a WebSocket handshake, so the JWT goes in the query string
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/boards/${currentBoardId}?token=${encodeURIComponent(currentToken)}`;
-    ws = new WebSocket(wsUrl);
+    const socket = new WebSocket(wsUrl);
+    ws = socket;
 
-    ws.onmessage = async (event) => {
+    socket.onopen = () => {
+        // Events published while we were disconnected are lost, so refetch the whole board after a drop
+        if (reconnectAttempts > 0) reloadBoardUI();
+        reconnectAttempts = 0;
+    };
+
+    socket.onmessage = async (event) => {
         const data = JSON.parse(event.data);
-        console.log("WebSocket Ping:", data);
         flashBoard();
-        
-        if (data.event === "list_created" || data.event === "list_deleted") {
-            // Trigger the magic flicker-free reload
+
+        if (data.event === "resync" || data.event === "list_created" || data.event === "list_deleted") {
+            // Structure may have changed (or events were missed): rebuild everything off-screen
             await reloadBoardUI();
         } else {
             // If just a task moved, only reload tasks
             loadTasks();
         }
     };
+
+    socket.onclose = (event) => {
+        // Closed on purpose (board switch or logout) and already replaced: nothing to do
+        if (socket !== ws) return;
+        ws = null;
+
+        if (event.code === WS_CLOSE_UNAUTHENTICATED) {
+            logout();
+            alert("Your session has expired. Please log in again.");
+        } else if (event.code === WS_CLOSE_NOT_A_MEMBER) {
+            loadBoards();
+        } else {
+            scheduleReconnect();
+        }
+    };
+}
+
+function scheduleReconnect() {
+    // Exponential backoff with jitter, so clients don't all reconnect at the same instant after an outage
+    const backoff = Math.min(RECONNECT_MAX_DELAY_MS, RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempts);
+    reconnectAttempts++;
+    reconnectTimer = setTimeout(connectWebSocket, backoff * (0.5 + Math.random() / 2));
+}
+
+function disconnectWebSocket() {
+    clearTimeout(reconnectTimer);
+    reconnectAttempts = 0;
+    if (ws) {
+        const socket = ws;
+        ws = null;
+        socket.close();
+    }
 }
 
 function flashBoard() {

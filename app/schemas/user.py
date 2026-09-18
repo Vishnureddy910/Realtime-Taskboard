@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 class UserCreate(BaseModel):
@@ -18,6 +20,8 @@ class UserSearchOut(BaseModel):
 
     id: int
     username: str
+    # Names of boards both the searcher and this user belong to
+    shared_boards: List[str] = []
 
 class Token(BaseModel):
     access_token: str

@@ -42,6 +42,27 @@ def test_event_published_by_another_instance_is_delivered(client, redis_sync):
         assert ws.receive_json() == {"event": "task_deleted", "task_id": 42}
 
 
+def test_listener_recovers_after_redis_connection_drop(client, redis_sync):
+    """
+    Killing the Pub/Sub connection used to kill the listener silently, so the board
+    stopped receiving updates on this instance. Now it resubscribes, tells clients
+    to resync (events during the gap are lost), and keeps delivering.
+    """
+    alice = register(client, "alice")
+    board = create_board(client, alice)
+    channel = f"board:{board['id']}"
+
+    with client.websocket_connect(f"/ws/boards/{board['id']}?token={alice.token}") as ws:
+        _wait_for_subscriber(redis_sync, channel)
+
+        redis_sync.client_kill_filter(_type="pubsub")
+
+        assert ws.receive_json() == {"event": "resync"}
+        _wait_for_subscriber(redis_sync, channel)
+        redis_sync.publish(channel, '{"event": "task_deleted", "task_id": 7}')
+        assert ws.receive_json() == {"event": "task_deleted", "task_id": 7}
+
+
 class _FakeSocket:
     def __init__(self, fail: bool = False):
         self.fail = fail

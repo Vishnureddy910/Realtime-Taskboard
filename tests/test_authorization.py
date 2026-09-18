@@ -1,6 +1,8 @@
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
+from app.routers.websocket import CLOSE_NOT_A_MEMBER, CLOSE_UNAUTHENTICATED
+
 from tests.helpers import add_member, create_board, create_task, register
 
 
@@ -93,14 +95,16 @@ def test_task_cannot_be_moved_to_another_board(client, alice_board):
 def test_websocket_rejects_missing_or_invalid_token(client, alice_board, token):
     _, board, _ = alice_board
     url = f"/ws/boards/{board['id']}" + (f"?token={token}" if token else "")
-    with pytest.raises(WebSocketDisconnect):
+    with pytest.raises(WebSocketDisconnect) as closed:
         with client.websocket_connect(url) as ws:
             ws.receive_text()
+    assert closed.value.code == CLOSE_UNAUTHENTICATED
 
 
 def test_websocket_rejects_non_members(client, alice_board):
     _, board, _ = alice_board
     mallory = register(client, "mallory")
-    with pytest.raises(WebSocketDisconnect):
+    with pytest.raises(WebSocketDisconnect) as closed:
         with client.websocket_connect(f"/ws/boards/{board['id']}?token={mallory.token}") as ws:
             ws.receive_text()
+    assert closed.value.code == CLOSE_NOT_A_MEMBER

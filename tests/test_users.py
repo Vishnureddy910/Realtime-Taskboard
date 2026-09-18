@@ -24,7 +24,7 @@ def test_search_never_exposes_email(client):
     alice = register(client, "alice")
     register(client, "bob")
 
-    assert search(client, alice, "bo").json() == [{"id": 2, "username": "bob"}]
+    assert search(client, alice, "bo").json() == [{"id": 2, "username": "bob", "shared_boards": []}]
 
 
 def test_search_excludes_yourself(client):
@@ -51,9 +51,37 @@ def test_results_are_capped(client):
     assert len(search(client, alice, "us").json()) == 8
 
 
-def test_query_must_be_at_least_two_characters(client):
+def test_single_character_query_works_and_empty_is_rejected(client):
     alice = register(client, "alice")
-    assert search(client, alice, "a").status_code == 422
+    register(client, "bob")
+
+    assert [u["username"] for u in search(client, alice, "b").json()] == ["bob"]
+    assert search(client, alice, "").status_code == 422
+
+
+def test_collaborators_rank_first_with_shared_boards(client):
+    alice = register(client, "alice")
+    ben, bob = register(client, "ben"), register(client, "bob")
+    sprint = create_board(client, alice, "Sprint")
+    batman = create_board(client, alice, "Batman")
+    add_member(client, alice, sprint["id"], bob)
+    add_member(client, alice, batman["id"], bob)
+
+    results = search(client, alice, "b").json()
+    # bob outranks ben despite sorting later alphabetically, because alice already works with him
+    assert [(u["username"], u["shared_boards"]) for u in results] == [
+        ("bob", ["Batman", "Sprint"]),
+        ("ben", []),
+    ]
+
+
+def test_shared_boards_never_reveal_boards_the_searcher_is_not_on(client):
+    alice, bob = register(client, "alice"), register(client, "bob")
+    create_board(client, bob, "Bob's secret board")
+    together = create_board(client, alice, "Together")
+    add_member(client, alice, together["id"], bob)
+
+    assert search(client, alice, "bob").json()[0]["shared_boards"] == ["Together"]
 
 
 def test_search_requires_login(client):
