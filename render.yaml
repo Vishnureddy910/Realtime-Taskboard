@@ -5,6 +5,8 @@ services:
     dockerfilePath: Dockerfile
     plan: free
     envVars:
+      - key: ENVIRONMENT
+        value: production
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL

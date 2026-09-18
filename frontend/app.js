@@ -205,67 +205,105 @@ async function loadLists(boardId) {
         
         listMap = {};
         const boardColumnsContainer = document.getElementById("board-columns");
-        boardColumnsContainer.innerHTML = ""; 
-        
+        boardColumnsContainer.innerHTML = "";
+
         boardColumnsContainer.classList.remove("items-start");
         boardColumnsContainer.classList.add("items-stretch");
 
-        const headerColors = ["bg-gray-300", "bg-blue-200", "bg-green-200", "bg-purple-200", "bg-yellow-200", "bg-red-200"];
-
         lists.forEach((list, index) => {
             listMap[list.name] = list.id;
-
-            const colDiv = document.createElement("div");
-            colDiv.className = "flex-1 min-w-[280px] bg-gray-100 border-2 border-gray-300 rounded-lg flex flex-col max-h-[75vh] shadow-sm overflow-hidden transition-colors";
-
-            colDiv.ondragover = allowDrop;
-            colDiv.ondragleave = dragLeave;
-            colDiv.ondrop = (e) => drop(e, list.id);
-
-            const colorClass = headerColors[index % headerColors.length];
-            
-            // NEW: Header container with Delete Column (X) icon
-            const headerContainer = document.createElement("div");
-            headerContainer.className = `flex justify-between items-center p-3 ${colorClass}`;
-            
-            const header = document.createElement("h3");
-            header.className = `font-bold text-gray-800`;
-            header.innerText = list.name;
-            
-            const deleteListBtn = document.createElement("button");
-            deleteListBtn.innerHTML = `<svg class="w-4 h-4 text-gray-700 hover:text-red-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
-            deleteListBtn.onclick = () => promptDeleteList(list.id);
-            deleteListBtn.title = "Delete Column";
-
-            headerContainer.appendChild(header);
-            headerContainer.appendChild(deleteListBtn);
-
-            const taskContainer = document.createElement("div");
-            taskContainer.id = `list-${list.id}`;
-            taskContainer.className = "p-3 flex-1 flex flex-col gap-3 overflow-y-auto";
-            
-            const addTaskBtn = document.createElement("button");
-            addTaskBtn.className = "w-full text-left text-sm text-gray-500 hover:text-gray-800 p-2 mt-2 font-semibold bg-gray-50 border-t border-gray-200";
-            addTaskBtn.innerText = "+ Add Task";
-            addTaskBtn.onclick = () => openTaskModal("create", list.id);
-
-            colDiv.appendChild(headerContainer);
-            colDiv.appendChild(taskContainer);
-            colDiv.appendChild(addTaskBtn); 
-            
-            boardColumnsContainer.appendChild(colDiv);
+            boardColumnsContainer.appendChild(buildColumn(list, index));
         });
-
-        // NEW: Add a "New Column" placeholder at the far right
-        const addColBtn = document.createElement("button");
-        addColBtn.className = "min-w-[280px] bg-white border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center min-h-[60vh] text-gray-500 hover:bg-gray-50 hover:text-gray-700 font-bold transition-colors";
-        addColBtn.innerText = "+ Add New Column";
-        addColBtn.onclick = openListModal;
-        boardColumnsContainer.appendChild(addColBtn);
+        boardColumnsContainer.appendChild(buildAddColumnButton());
 
     } catch (error) {
         console.error("Error loading lists:", error);
     }
+}
+
+// --- DOM BUILDERS (shared by the initial load and the ghost-DOM reload) ---
+const HEADER_COLORS = ["bg-gray-300", "bg-blue-200", "bg-green-200", "bg-purple-200", "bg-yellow-200", "bg-red-200"];
+const EDIT_ICON = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>`;
+const DELETE_ICON = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
+const CLOSE_ICON = `<svg class="w-4 h-4 text-gray-700 hover:text-red-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+
+// Creates an element; `text` is always assigned via textContent so user data is never parsed as HTML
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+function buildColumn(list, index) {
+    const colDiv = el("div", "flex-1 min-w-[280px] bg-gray-100 border-2 border-gray-300 rounded-lg flex flex-col max-h-[75vh] shadow-sm overflow-hidden transition-colors");
+    colDiv.ondragover = allowDrop;
+    colDiv.ondragleave = dragLeave;
+    colDiv.ondrop = (e) => drop(e, list.id);
+
+    const headerContainer = el("div", `flex justify-between items-center p-3 ${HEADER_COLORS[index % HEADER_COLORS.length]}`);
+    const deleteListBtn = el("button");
+    deleteListBtn.innerHTML = CLOSE_ICON;
+    deleteListBtn.title = "Delete Column";
+    deleteListBtn.onclick = () => promptDeleteList(list.id);
+    headerContainer.append(el("h3", "font-bold text-gray-800", list.name), deleteListBtn);
+
+    const taskContainer = el("div", "p-3 flex-1 flex flex-col gap-3 overflow-y-auto");
+    taskContainer.id = `list-${list.id}`;
+
+    const addTaskBtn = el("button", "w-full text-left text-sm text-gray-500 hover:text-gray-800 p-2 mt-2 font-semibold bg-gray-50 border-t border-gray-200", "+ Add Task");
+    addTaskBtn.onclick = () => openTaskModal("create", list.id);
+
+    colDiv.append(headerContainer, taskContainer, addTaskBtn);
+    return colDiv;
+}
+
+function buildAddColumnButton() {
+    const addColBtn = el("button", "min-w-[280px] bg-white border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center min-h-[60vh] text-gray-500 hover:bg-gray-50 hover:text-gray-700 font-bold transition-colors", "+ Add New Column");
+    addColBtn.onclick = openListModal;
+    return addColBtn;
+}
+
+function buildTaskCard(task) {
+    const card = el("div", "bg-white p-3 rounded shadow-sm border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors");
+    card.draggable = true;
+    card.dataset.task = JSON.stringify(task);
+    card.ondragstart = drag;
+
+    const titleRow = el("div", "flex justify-between items-start mb-1");
+    titleRow.append(
+        el("div", "font-bold text-sm text-gray-800", task.title),
+        el("div", "text-[10px] bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-semibold", task.creator ? task.creator.username : "Unknown"),
+    );
+
+    const editBtn = el("button", "text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-1.5 rounded transition-colors");
+    editBtn.title = "Edit Task";
+    editBtn.innerHTML = EDIT_ICON;
+    editBtn.onclick = () => openTaskModal("edit", null, task);
+
+    const deleteBtn = el("button", "text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded transition-colors");
+    deleteBtn.title = "Delete Task";
+    deleteBtn.innerHTML = DELETE_ICON;
+    deleteBtn.onclick = () => promptDeleteTask(task.id);
+
+    const actions = el("div", "flex gap-2");
+    actions.append(editBtn, deleteBtn);
+
+    const footer = el("div", "flex justify-between items-center mt-3 pt-2 border-t border-gray-100");
+    footer.append(el("div", "text-xs text-gray-400", `v${task.version}`), actions);
+
+    card.append(titleRow, el("div", "text-xs text-gray-500", task.description || ""), footer);
+    return card;
+}
+
+// Surfaces the API's error detail (403, 409, 429...) instead of failing silently
+async function ensureOk(response) {
+    if (response.ok) return;
+    let detail = `Request failed (${response.status})`;
+    try {
+        detail = (await response.json()).detail || detail;
+    } catch (e) { /* non-JSON error body */ }
+    throw new Error(detail);
 }
 
 // --- NEW CRUD OPERATIONS ---
@@ -278,15 +316,32 @@ async function createBoard() {
             headers: { "Authorization": `Bearer ${currentToken}`, "Content-Type": "application/json" },
             body: JSON.stringify({ name: name, description: "" })
         });
-        loadBoards(); 
+        loadBoards();
     } catch (error) {
         console.error("Error creating board:", error);
     }
 }
 
+async function inviteMember() {
+    if (!currentBoardId) return;
+    const username = prompt("Username to add to this board (as editor):");
+    if (!username) return;
+    try {
+        const response = await fetch(`/boards/${currentBoardId}/members`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${currentToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ username: username.trim(), role: "editor" })
+        });
+        await ensureOk(response);
+        alert(`${username} can now collaborate on this board.`);
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
 let modalMode = "create"; // Tracks if we are creating or editing
 
-function openTaskModal(mode, listId, taskString = null) {
+function openTaskModal(mode, listId, task = null) {
     modalMode = mode;
     document.getElementById("task-modal").classList.remove("hidden");
     
@@ -296,13 +351,12 @@ function openTaskModal(mode, listId, taskString = null) {
         document.getElementById("modal-task-desc").value = "";
         document.getElementById("modal-list-id").value = listId;
     } else if (mode === "edit") {
-        const task = JSON.parse(taskString);
         document.getElementById("modal-title").innerText = "Edit Task";
-        document.getElementById("modal-task-title").value = task.title || task.name || "";
+        document.getElementById("modal-task-title").value = task.title;
         document.getElementById("modal-task-desc").value = task.description || "";
         document.getElementById("modal-list-id").value = task.list_id;
         document.getElementById("modal-task-id").value = task.id;
-        document.getElementById("modal-task-version").value = task.version || task.expected_version || 1;
+        document.getElementById("modal-task-version").value = task.version;
     }
 }
 
@@ -318,8 +372,9 @@ async function saveTask() {
     if (!title) return alert("Task title is required!");
 
     try {
+        let response;
         if (modalMode === "create") {
-            await fetch("/tasks/", {
+            response = await fetch("/tasks/", {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${currentToken}`, "Content-Type": "application/json" },
                 body: JSON.stringify({ title: title, description: desc, list_id: parseInt(listId) })
@@ -327,21 +382,23 @@ async function saveTask() {
         } else if (modalMode === "edit") {
             const taskId = document.getElementById("modal-task-id").value;
             const version = document.getElementById("modal-task-version").value;
-            
-            await fetch(`/tasks/${taskId}`, {
+
+            response = await fetch(`/tasks/${taskId}`, {
                 method: "PUT",
                 headers: { "Authorization": `Bearer ${currentToken}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    title: title, 
-                    description: desc, 
-                    list_id: parseInt(listId), 
-                    expected_version: parseInt(version) 
+                body: JSON.stringify({
+                    title: title,
+                    description: desc,
+                    list_id: parseInt(listId),
+                    expected_version: parseInt(version)
                 })
             });
         }
+        await ensureOk(response);
         closeTaskModal();
     } catch (error) {
-        console.error("Error saving task:", error);
+        alert(error.message);
+        loadTasks();
     }
 }
 
@@ -375,13 +432,14 @@ async function confirmDelete() {
     if (!itemToDelete) return;
     try {
         const url = deleteType === "task" ? `/tasks/${itemToDelete}` : `/lists/${itemToDelete}`;
-        await fetch(url, {
+        const response = await fetch(url, {
             method: "DELETE",
             headers: { "Authorization": `Bearer ${currentToken}` }
         });
         closeDeleteModal();
+        await ensureOk(response);
     } catch (error) {
-        console.error("Error deleting:", error);
+        alert(error.message);
     }
 }
 
@@ -399,14 +457,15 @@ async function saveList() {
     const name = document.getElementById("modal-list-name").value.trim();
     if (!name) return alert("Column name is required!");
     try {
-        await fetch("/lists/", {
+        const response = await fetch("/lists/", {
             method: "POST",
             headers: { "Authorization": `Bearer ${currentToken}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ name: name, board_id: currentBoardId })
+            body: JSON.stringify({ name: name, board_id: parseInt(currentBoardId) })
         });
+        await ensureOk(response);
         closeListModal();
     } catch (error) {
-        console.error("Error creating list:", error);
+        alert(error.message);
     }
 }
 
@@ -414,7 +473,8 @@ async function saveList() {
 function connectWebSocket() {
     if (!currentBoardId) return;
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws/boards/${currentBoardId}`;
+    // Browsers can't send an Authorization header on a WebSocket handshake, so the JWT goes in the query string
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/boards/${currentBoardId}?token=${encodeURIComponent(currentToken)}`;
     ws = new WebSocket(wsUrl);
 
     ws.onmessage = async (event) => {
@@ -463,40 +523,8 @@ function renderTasks(tasks) {
     });
 
     tasks.forEach(task => {
-        const card = document.createElement("div");
-        card.className = "bg-white p-3 rounded shadow-sm border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors";
-        card.draggable = true;
-        card.dataset.task = JSON.stringify(task);
-        card.ondragstart = drag;
-
-        const version = task.version || task.expected_version || 1;
-        const creatorName = task.creator ? task.creator.username : "Unknown";
-        const taskDataString = encodeURIComponent(JSON.stringify(task));
-
-        // Professional SVG Icons
-        const editIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>`;
-        const deleteIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
-
-        card.innerHTML = `
-            <div class="flex justify-between items-start mb-1">
-                <div class="font-bold text-sm text-gray-800">${task.title || task.name}</div>
-                <div class="text-[10px] bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-semibold">${creatorName}</div>
-            </div>
-            <div class="text-xs text-gray-500">${task.description || ""}</div>
-            
-            <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-100">
-                <div class="text-xs text-gray-400">v${version}</div>
-                <div class="flex gap-2">
-                    <button onclick='openTaskModal("edit", null, decodeURIComponent("${taskDataString}"))' class="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-1.5 rounded transition-colors" title="Edit Task">${editIcon}</button>
-                    <button onclick="promptDeleteTask(${task.id})" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded transition-colors" title="Delete Task">${deleteIcon}</button>
-                </div>
-            </div>
-        `;
-
         const targetList = document.getElementById(`list-${task.list_id}`);
-        if (targetList) {
-            targetList.appendChild(card);
-        }
+        if (targetList) targetList.appendChild(buildTaskCard(task));
     });
 }
 
@@ -556,22 +584,17 @@ async function drop(event, newListId) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                title: taskData.title,
-                name: taskData.name,
-                description: taskData.description,
                 list_id: newListId,
-                expected_version: taskData.version || 1 
+                expected_version: taskData.version
             })
         });
 
-        if (!response.ok) {
-            if (response.status === 409) {
-                throw new Error("Someone else modified this task! Refreshing...");
-            }
-            throw new Error("Failed to move task on server.");
+        if (response.status === 409) {
+            throw new Error("Someone else modified this task first. Showing the latest version.");
         }
+        await ensureOk(response);
     } catch (error) {
-        console.error(error);
+        alert(error.message);
         if (draggedElement) draggedElement.classList.remove("opacity-50");
         loadTasks(); 
     }
@@ -586,6 +609,8 @@ async function reloadBoardUI() {
             fetch(`/boards/${currentBoardId}/lists`, { headers: { "Authorization": `Bearer ${currentToken}` } }),
             fetch(`/boards/${currentBoardId}/tasks`, { headers: { "Authorization": `Bearer ${currentToken}` } })
         ]);
+        await ensureOk(listsRes);
+        await ensureOk(tasksRes);
 
         const lists = await listsRes.json();
         const tasks = await tasksRes.json();
@@ -594,97 +619,20 @@ async function reloadBoardUI() {
         const fragment = document.createDocumentFragment();
         listMap = {};
 
-        const headerColors = ["bg-gray-300", "bg-blue-200", "bg-green-200", "bg-purple-200", "bg-yellow-200", "bg-red-200"];
-
         lists.forEach((list, index) => {
             listMap[list.name] = list.id;
-            const colDiv = document.createElement("div");
-            colDiv.className = "flex-1 min-w-[280px] bg-gray-100 border-2 border-gray-300 rounded-lg flex flex-col max-h-[75vh] shadow-sm overflow-hidden transition-colors";
-            
-            // Re-attach drag and drop events
-            colDiv.ondragover = allowDrop;
-            colDiv.ondragleave = dragLeave;
-            colDiv.ondrop = (e) => drop(e, list.id);
-
-            const colorClass = headerColors[index % headerColors.length];
-            const headerContainer = document.createElement("div");
-            headerContainer.className = `flex justify-between items-center p-3 ${colorClass}`;
-            
-            const header = document.createElement("h3");
-            header.className = `font-bold text-gray-800`;
-            header.innerText = list.name;
-            
-            const deleteListBtn = document.createElement("button");
-            deleteListBtn.innerHTML = `<svg class="w-4 h-4 text-gray-700 hover:text-red-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
-            deleteListBtn.onclick = () => promptDeleteList(list.id);
-            
-            headerContainer.appendChild(header);
-            headerContainer.appendChild(deleteListBtn);
-
-            const taskContainer = document.createElement("div");
-            taskContainer.id = `list-${list.id}`;
-            taskContainer.className = "p-3 flex-1 flex flex-col gap-3 overflow-y-auto";
-            
-            const addTaskBtn = document.createElement("button");
-            addTaskBtn.className = "w-full text-left text-sm text-gray-500 hover:text-gray-800 p-2 mt-2 font-semibold bg-gray-50 border-t border-gray-200";
-            addTaskBtn.innerText = "+ Add Task";
-            addTaskBtn.onclick = () => openTaskModal("create", list.id);
-
-            colDiv.appendChild(headerContainer);
-            colDiv.appendChild(taskContainer);
-            colDiv.appendChild(addTaskBtn); 
-            
-            fragment.appendChild(colDiv); // Add finished column to our ghost DOM
+            fragment.appendChild(buildColumn(list, index));
         });
-
-        // Add the "New Column" button to the ghost DOM
-        const addColBtn = document.createElement("button");
-        addColBtn.className = "min-w-[280px] bg-white border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center min-h-[60vh] text-gray-500 hover:bg-gray-50 hover:text-gray-700 font-bold transition-colors";
-        addColBtn.innerText = "+ Add New Column";
-        addColBtn.onclick = openListModal;
-        fragment.appendChild(addColBtn);
+        fragment.appendChild(buildAddColumnButton());
 
         // 2. Put all the tasks into their exact columns IN MEMORY (still invisible)
         tasks.forEach(task => {
-            const card = document.createElement("div");
-            card.className = "bg-white p-3 rounded shadow-sm border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors";
-            card.draggable = true;
-            card.dataset.task = JSON.stringify(task);
-            card.ondragstart = drag;
-
-            const version = task.version || task.expected_version || 1;
-            const creatorName = task.creator ? task.creator.username : "Unknown";
-            const taskDataString = encodeURIComponent(JSON.stringify(task));
-
-            const editIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>`;
-            const deleteIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
-
-            card.innerHTML = `
-                <div class="flex justify-between items-start mb-1">
-                    <div class="font-bold text-sm text-gray-800">${task.title || task.name}</div>
-                    <div class="text-[10px] bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-semibold">${creatorName}</div>
-                </div>
-                <div class="text-xs text-gray-500">${task.description || ""}</div>
-                
-                <div class="flex justify-between items-center mt-3 pt-2 border-t border-gray-100">
-                    <div class="text-xs text-gray-400">v${version}</div>
-                    <div class="flex gap-2">
-                        <button onclick='openTaskModal("edit", null, decodeURIComponent("${taskDataString}"))' class="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-1.5 rounded transition-colors" title="Edit Task">${editIcon}</button>
-                        <button onclick="promptDeleteTask(${task.id})" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded transition-colors" title="Delete Task">${deleteIcon}</button>
-                    </div>
-                </div>
-            `;
-
             const targetList = fragment.querySelector(`#list-${task.list_id}`);
-            if (targetList) {
-                targetList.appendChild(card);
-            }
+            if (targetList) targetList.appendChild(buildTaskCard(task));
         });
 
-        // 3. The magic move! Swap the fully built structure onto the screen instantly
-        const boardColumnsContainer = document.getElementById("board-columns");
-        boardColumnsContainer.innerHTML = ""; 
-        boardColumnsContainer.appendChild(fragment);
+        // 3. Swap the fully built structure onto the screen in a single DOM operation
+        document.getElementById("board-columns").replaceChildren(fragment);
 
     } catch (error) {
         console.error("Error completely reloading board UI:", error);

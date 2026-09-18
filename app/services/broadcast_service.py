@@ -26,4 +26,4 @@ async def subscribe_to_channel(board_id: int):
                 await manager.broadcast(message["data"], board_id)
     except asyncio.CancelledError:
         await pubsub.unsubscribe(channel)
-        await pubsub.close()
+        await pubsub.aclose()
