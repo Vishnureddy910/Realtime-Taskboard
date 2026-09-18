@@ -366,7 +366,7 @@ async function refreshBoardAccess() {
     const roleChanged = board.role !== currentRole;
     applyBoardAccess(board);
     if (roleChanged) reloadBoardUI(); // re-render so drag and edit controls match the new role
-    if (isMembersModalOpen()) openMembersModal();
+    if (isMembersModalOpen()) openMembersModal({ mode: membersModalMode });
 }
 
 // --- MEMBERS (list, roles, remove, leave, invite with username autocomplete) ---
@@ -382,24 +382,36 @@ function isMembersModalOpen() {
     return !document.getElementById("members-modal").classList.contains("hidden");
 }
 
-function openMembersModal({ focusInvite = false } = {}) {
+let membersModalMode = "manage";
+
+// One job per button: "Members" lists and manages people, "+ Invite" (owner only) adds them
+function openMembersModal({ mode = "manage" } = {}) {
     if (!currentBoardId) return;
     const isOwner = currentRole === "owner";
-    const wasOpen = isMembersModalOpen();
+    if (!isOwner) mode = "manage";
+    const inviting = mode === "invite";
+    const alreadyOpenInThisMode = isMembersModalOpen() && membersModalMode === mode;
+    membersModalMode = mode;
 
-    // Only the owner can invite; everyone except the owner can leave.
-    // The hidden attribute (not Tailwind's class) so visibility never waits on runtime-generated CSS.
-    document.getElementById("invite-section").hidden = !isOwner;
-    document.getElementById("leave-board-btn").hidden = isOwner;
+    // The hidden attribute (not Tailwind's class) so visibility never waits on runtime-generated CSS
+    document.getElementById("members-title").textContent = inviting ? "Invite to board" : "Board members";
+    document.getElementById("members-panel").hidden = inviting;
+    document.getElementById("members-count").hidden = inviting;
+    document.getElementById("invite-section").hidden = !inviting;
+    // Everyone except the owner can leave (a board always keeps its owner)
+    document.getElementById("leave-board-btn").hidden = inviting || isOwner;
     document.getElementById("members-error").textContent = "";
     document.getElementById("members-modal").classList.remove("hidden");
 
-    if (isOwner && !wasOpen) {
-        resetInviteSearch();
-        document.getElementById("invite-role").value = "editor";
+    if (inviting) {
+        if (!alreadyOpenInThisMode) {
+            resetInviteSearch();
+            document.getElementById("invite-role").value = "editor";
+        }
+        document.getElementById("invite-search").focus();
+    } else {
+        loadMembers();
     }
-    if (isOwner && focusInvite) document.getElementById("invite-search").focus();
-    loadMembers();
 }
 
 function closeMembersModal() {
@@ -648,7 +660,6 @@ async function submitInvite() {
         await ensureOk(response);
         resetInviteSearch();
         setInviteHint(`${invitee.username} added as ${role}.`, "success");
-        loadMembers();
     } catch (error) {
         setInviteHint(error.message, "error");
     }
