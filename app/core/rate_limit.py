@@ -31,11 +31,17 @@ class RateLimiter:
         if request_count > self.limit:
             raise HTTPException(
                 status_code=429,
-                detail="Too many requests. Please wait a minute before creating more tasks.",
+                detail="Too many requests. Please wait a minute and try again.",
             )
 
 task_creation_rate_limit = RateLimiter(
     scope="tasks",
     limit=settings.TASK_RATE_LIMIT,
     window_seconds=settings.TASK_RATE_WINDOW_SECONDS,
+)
+
+user_search_rate_limit = RateLimiter(
+    scope="user_search",
+    limit=settings.USER_SEARCH_RATE_LIMIT,
+    window_seconds=settings.USER_SEARCH_RATE_WINDOW_SECONDS,
 )
